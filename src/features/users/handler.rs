@@ -1,4 +1,4 @@
-use axum::{extract::Path, http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{Extension, Json, extract::Path, http::StatusCode, response::IntoResponse};
 
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
@@ -8,13 +8,14 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::model::{CreateUser, UpdateUser, UserDTO};
+use crate::error::{Error, Result};
 
 use entity::user;
 
 pub async fn create_user(
     Extension(db_connection): Extension<DatabaseConnection>,
     Json(payload): Json<CreateUser>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let user_model = user::ActiveModel {
         name: Set(payload.name),
         email: Set(payload.email),
@@ -23,28 +24,31 @@ pub async fn create_user(
         ..Default::default()
     };
 
-    user_model.insert(&db_connection).await.unwrap();
+    user_model
+        .insert(&db_connection)
+        .await
+        .map_err(|e| Error::InsertFailed(e))?;
 
-    (
+    Ok((
         StatusCode::CREATED,
         Json(json!(
             {
                 "message": "User created successfully"
             }
         )),
-    )
+    ))
 }
 
 pub async fn get_user_by_id(
     Extension(db_connection): Extension<DatabaseConnection>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let user = user::Entity::find()
         .filter(Condition::all().add(user::Column::Id.eq(id)))
         .one(&db_connection)
         .await
-        .unwrap()
-        .unwrap();
+        .map_err(|e| Error::QueryFailed(e))?
+        .ok_or_else(|| Error::RecordNotFound)?;
 
     let result = UserDTO {
         id: user.id,
@@ -54,71 +58,73 @@ pub async fn get_user_by_id(
         is_online: user.is_online,
     };
 
-    (StatusCode::CREATED, Json(result))
+    Ok((StatusCode::CREATED, Json(result)))
 }
 
 pub async fn update_user(
     Extension(db_connection): Extension<DatabaseConnection>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateUser>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let mut user: user::ActiveModel = user::Entity::find()
         .filter(Condition::all().add(user::Column::Id.eq(id)))
         .one(&db_connection)
         .await
-        .unwrap()
-        .unwrap()
+        .map_err(|e| Error::QueryFailed(e))?
+        .ok_or_else(|| Error::RecordNotFound)?
         .into();
 
     user.name = Set(payload.name.unwrap());
     user.email = Set(payload.email.unwrap());
     user.avatar = Set(payload.avatar);
 
-    user.update(&db_connection).await.unwrap();
+    user.update(&db_connection)
+        .await
+        .map_err(|e| Error::UpdateFailed(e))?;
 
-    (
+    Ok((
         StatusCode::ACCEPTED,
         Json(json!(
             {
                 "message": "User updated successfully"
             }
         )),
-    )
+    ))
 }
 
 pub async fn delete_user(
     Extension(db_connection): Extension<DatabaseConnection>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let mut user = user::Entity::find()
         .filter(Condition::all().add(user::Column::Id.eq(id)))
         .one(&db_connection)
         .await
-        .unwrap()
-        .unwrap();
+        .map_err(|e| Error::QueryFailed(e))?
+        .ok_or_else(|| Error::RecordNotFound)?;
 
     user::Entity::delete_by_id(user.id)
         .exec(&db_connection)
         .await
-        .unwrap();
+        .map_err(|e| Error::DeleteFailed(e))?;
 
-    (
+    Ok((
         StatusCode::ACCEPTED,
         Json(json!(
             {
                 "message": "User deleted successfully"
             }
         )),
-    )
+    ))
 }
 
 pub async fn get_all_users(
     Extension(db_connection): Extension<DatabaseConnection>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let users: Vec<UserDTO> = user::Entity::find()
         .all(&db_connection)
         .await
-        .unwrap()
+        .map_err(|e| Error::QueryFailed(e))?
         .into_iter()
         .map(|user| UserDTO {
             id: user.id,
@@ -129,5 +135,5 @@ pub async fn get_all_users(
         })
         .collect();
 
-    (StatusCode::ACCEPTED, Json(users))
+    Ok((StatusCode::ACCEPTED, Json(users)))
 }

@@ -42,6 +42,9 @@ pub enum Error {
 		// Auth errors
     #[error("Please login first")]
     TokenNotFound,
+    
+    #[error("{0}")]
+    Unknown(String)
 }
 
 impl IntoResponse for Error {
