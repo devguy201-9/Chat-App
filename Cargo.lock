@@ -516,6 +516,8 @@ dependencies = [
  "dotenv",
  "entity",
  "jsonwebtoken",
+ "mime",
+ "regex",
  "sea-orm 0.12.15",
  "serde",
  "serde_json",

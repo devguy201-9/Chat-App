@@ -1,16 +1,22 @@
-mod error;
-mod router;
 mod enums;
+mod error;
 mod features;
+mod router;
 mod utils;
+mod socket;
 
 use std::env;
 
-use axum::Extension;
+use axum::{Extension, http::HeaderValue};
 use dotenv::dotenv;
 use error::{Error, Result};
 use router::create_router;
 use sea_orm::{ConnectOptions, Database};
+use socketioxide::{SocketIo, handler::ConnectHandler};
+use tower::ServiceBuilder;
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
+
+use crate::socket::{on_connect,check_login};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -29,8 +35,20 @@ async fn main() -> Result<()> {
         .await
         .map_err(|_| Error::DatabaseConnectionFailed)?;
 
+    let (layer, io) = SocketIo::new_layer();
+
+    io.ns("/", on_connect.with(check_login));
+
     // build our application with a route
-    let app = create_router().layer(Extension(db_connection));
+    let app = create_router()
+        .fallback_service(ServeDir::new("public"))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(CorsLayer::new().allow_origin("*".parse::<HeaderValue>().unwrap()))
+                .layer(Extension(db_connection))
+                .layer(layer),
+        );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();

@@ -1,10 +1,13 @@
-use axum::{Extension, Json, extract::Path, http::StatusCode, response::IntoResponse};
+use axum::{Extension, Json, extract::Path, extract::Multipart, http::StatusCode, response::IntoResponse};
 
+use regex::Regex;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde_json::json;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use super::model::{CreateUser, UpdateUser, UserDTO};
@@ -136,4 +139,50 @@ pub async fn get_all_users(
         .collect();
 
     Ok((StatusCode::ACCEPTED, Json(users)))
+}
+
+pub async fn update_avatar(
+    Extension(db_connection): Extension<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse> {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let field_name = field.name().unwrap().to_string();
+
+        if field_name == "avatar" {
+            let file_name = field.file_name().unwrap();
+            let content_type = field.content_type().unwrap();
+
+            let regex = Regex::new(mime::IMAGE_STAR.as_ref()).unwrap();
+
+            if regex.is_match(&content_type) {
+                let mut user: user::ActiveModel = user::Entity::find()
+                    .filter(Condition::all().add(user::Column::Id.eq(id)))
+                    .one(&db_connection)
+                    .await
+                    .map_err(|e| Error::QueryFailed(e))?
+                    .ok_or_else(|| Error::RecordNotFound)?
+                    .into();
+
+                user.avatar = Set(Some(file_name.to_string()));
+
+                let mut file = File::create(format!("./public/uploads/{file_name}"))
+                    .await
+                    .map_err(|_| Error::CreateFileFailed)?;
+                let data = field.bytes().await.unwrap();
+                file.write(&data).await.unwrap();
+
+                user.update(&db_connection)
+                    .await
+                    .map_err(|e| Error::UpdateFailed(e))?;
+            } else {
+                return Err(Error::FileTypeInvalid);
+            }
+        }
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": "Avatar updated successfully" })),
+    ))
 }

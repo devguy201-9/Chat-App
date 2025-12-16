@@ -1,12 +1,12 @@
 use axum::{routing::get, Router};
 
-use super::handler::{create_user, delete_user, get_all_users, get_user_by_id, update_user};
+use super::handler::{create_user, delete_user, get_all_users, get_user_by_id, update_user, update_avatar};
 
 pub fn get_routes() -> Router {
     Router::new()
         .route("/", get(get_all_users).post(create_user))
         .route(
             "/:id",
-            get(get_user_by_id).delete(delete_user).patch(update_user),
+            get(get_user_by_id).delete(delete_user).patch(update_user).post(update_avatar),
         )
 }
