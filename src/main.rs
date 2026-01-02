@@ -2,8 +2,8 @@ mod enums;
 mod error;
 mod features;
 mod router;
-mod utils;
 mod socket;
+mod utils;
 
 use std::env;
 
@@ -16,7 +16,7 @@ use socketioxide::{SocketIo, handler::ConnectHandler};
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
-use crate::socket::{on_connect,check_login};
+use crate::socket::{check_login, on_connect};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,12 +45,17 @@ async fn main() -> Result<()> {
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
-                .layer(CorsLayer::new().allow_origin("*".parse::<HeaderValue>().unwrap()))
+                //.layer(CorsLayer::new().allow_origin("*".parse::<HeaderValue>().unwrap()))
+                .layer(CorsLayer::new().allow_origin(HeaderValue::from_static("*")))
                 .layer(Extension(db_connection))
                 .layer(layer),
         );
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+        .await
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| Error::Unknown(e.to_string()))?;
     Ok(())
 }

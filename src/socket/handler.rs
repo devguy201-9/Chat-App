@@ -3,7 +3,7 @@ use socketioxide::{
     extract::{Data, SocketRef},
     socket::DisconnectReason,
 };
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     error::Error,
@@ -14,14 +14,17 @@ use crate::{
 use super::model::JoinRoom;
 
 pub async fn handle_message(socket: SocketRef, Data(data): Data<Chat>) {
-    let db_connection = socket
+    // try to get DB connection; if missing, log and continue (do not panic)
+    if let Some(db_connection) = socket
         .req_parts()
         .extensions
         .get::<DatabaseConnection>()
-        .ok_or_else(|| Error::DatabaseConnectionFailed)
-        .unwrap();
-
-    let _ = insert_chat(db_connection.to_owned(), data.clone()).await;
+        .cloned()
+    {
+        let _ = insert_chat(db_connection, data.clone()).await;
+    } else {
+        error!("DB connection missing in socket extensions; message not saved");
+    }
 
     let resp = MessageOut {
         content: data.content,
